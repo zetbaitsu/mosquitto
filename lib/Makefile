@@ -29,16 +29,27 @@ MOSQ_OBJS=mosquitto.o \
 		  thread_mosq.o \
 		  time_mosq.o \
 		  tls_mosq.o \
+		  utf8_mosq.o \
 		  util_mosq.o \
 		  will_mosq.o
 
-all : libmosquitto.so.${SOVERSION} libmosquitto.a
+ALL_DEPS=libmosquitto.so.${SOVERSION}
+
+ifeq ($(WITH_STATIC_LIBRARIES),yes)
+	ALL_DEPS+=libmosquitto.a
+endif
+
+all : ${ALL_DEPS}
 	$(MAKE) -C cpp
 
 install : all
 	$(INSTALL) -d ${DESTDIR}$(prefix)/lib${LIB_SUFFIX}/
-	$(INSTALL) -s --strip-program=${CROSS_COMPILE}${STRIP} libmosquitto.so.${SOVERSION} ${DESTDIR}${prefix}/lib${LIB_SUFFIX}/libmosquitto.so.${SOVERSION}
+	$(INSTALL) ${STRIP_OPTS} libmosquitto.so.${SOVERSION} ${DESTDIR}${prefix}/lib${LIB_SUFFIX}/libmosquitto.so.${SOVERSION}
 	ln -sf libmosquitto.so.${SOVERSION} ${DESTDIR}${prefix}/lib${LIB_SUFFIX}/libmosquitto.so
+ifeq ($(WITH_STATIC_LIBRARIES),yes)
+	$(INSTALL) libmosquitto.a ${DESTDIR}${prefix}/lib${LIB_SUFFIX}/libmosquitto.a
+	${CROSS_COMPILE}${STRIP} -g --strip-unneeded ${DESTDIR}${prefix}/lib${LIB_SUFFIX}/libmosquitto.a
+endif
 	$(INSTALL) -d ${DESTDIR}${prefix}/include/
 	$(INSTALL) mosquitto.h ${DESTDIR}${prefix}/include/mosquitto.h
 	$(MAKE) -C cpp install
@@ -46,6 +57,7 @@ install : all
 uninstall :
 	-rm -f ${DESTDIR}${prefix}/lib${LIB_SUFFIX}/libmosquitto.so.${SOVERSION}
 	-rm -f ${DESTDIR}${prefix}/lib${LIB_SUFFIX}/libmosquitto.so
+	-rm -f ${DESTDIR}${prefix}/lib${LIB_SUFFIX}/libmosquitto.a
 	-rm -f ${DESTDIR}${prefix}/include/mosquitto.h
 
 reallyclean : clean
@@ -139,6 +151,9 @@ time_mosq.o : time_mosq.c
 	${CROSS_COMPILE}$(CC) $(LIB_CFLAGS) -c $< -o $@
 
 tls_mosq.o : tls_mosq.c
+	${CROSS_COMPILE}$(CC) $(LIB_CFLAGS) -c $< -o $@
+
+utf8_mosq.o : utf8_mosq.c
 	${CROSS_COMPILE}$(CC) $(LIB_CFLAGS) -c $< -o $@
 
 util_mosq.o : util_mosq.c util_mosq.h

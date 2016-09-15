@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2009-2015 Roger Light <roger@atchoo.org>
+Copyright (c) 2009-2016 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -19,7 +19,7 @@ Contributors:
 
 #include "config.h"
 
-#include "mosquitto_broker.h"
+#include "mosquitto_broker_internal.h"
 #include "memory_mosq.h"
 #include "mqtt3_protocol.h"
 #include "packet_mosq.h"
@@ -54,20 +54,29 @@ int handle__unsubscribe(struct mosquitto_db *db, struct mosquitto *context)
 
 		if(sub){
 			if(STREMPTY(sub)){
-				log__printf(NULL, MOSQ_LOG_INFO, "Empty unsubscription string from %s, disconnecting.",
-					context->id);
+				log__printf(NULL, MOSQ_LOG_INFO,
+						"Empty unsubscription string from %s, disconnecting.",
+						context->id);
 				mosquitto__free(sub);
 				return 1;
 			}
 			if(mosquitto_sub_topic_check(sub)){
-				log__printf(NULL, MOSQ_LOG_INFO, "Invalid unsubscription string from %s, disconnecting.",
-					context->id);
+				log__printf(NULL, MOSQ_LOG_INFO,
+						"Invalid unsubscription string from %s, disconnecting.",
+						context->id);
+				mosquitto__free(sub);
+				return 1;
+			}
+			if(mosquitto_validate_utf8(sub, strlen(sub))){
+				log__printf(NULL, MOSQ_LOG_INFO,
+						"Malformed UTF-8 in unsubscription string from %s, disconnecting.",
+						context->id);
 				mosquitto__free(sub);
 				return 1;
 			}
 
 			log__printf(NULL, MOSQ_LOG_DEBUG, "\t%s", sub);
-			sub__remove(db, context, sub, &db->subs);
+			sub__remove(db, context, sub, db->subs);
 			log__printf(NULL, MOSQ_LOG_UNSUBSCRIBE, "%s %s", context->id, sub);
 			mosquitto__free(sub);
 		}

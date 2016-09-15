@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2009-2015 Roger Light <roger@atchoo.org>
+Copyright (c) 2009-2016 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -30,7 +30,7 @@ Contributors:
 #include "config.h"
 
 #include "mosquitto.h"
-#include "mosquitto_broker.h"
+#include "mosquitto_broker_internal.h"
 #include "mosquitto_internal.h"
 #include "net_mosq.h"
 #include "memory_mosq.h"
@@ -116,7 +116,7 @@ int bridge__connect(struct mosquitto_db *db, struct mosquitto *context)
 	context->state = mosq_cs_new;
 	context->sock = INVALID_SOCKET;
 	context->last_msg_in = mosquitto_time();
-	context->last_msg_out = mosquitto_time();
+	context->next_msg_out = mosquitto_time() + context->bridge->keepalive;
 	context->keepalive = context->bridge->keepalive;
 	context->clean_session = context->bridge->clean_session;
 	context->in_packet.payload = NULL;

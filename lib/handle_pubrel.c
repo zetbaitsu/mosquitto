@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2009-2015 Roger Light <roger@atchoo.org>
+Copyright (c) 2009-2016 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -30,7 +30,7 @@ Contributors:
 #include "util_mosq.h"
 
 #ifdef WITH_BROKER
-#  include "mosquitto_broker.h"
+#  include "mosquitto_broker_internal.h"
 #endif
 
 
@@ -56,6 +56,7 @@ int handle__pubrel(struct mosquitto_db *db, struct mosquitto *mosq)
 	if(db__message_release(db, mosq, mid, mosq_md_in)){
 		/* Message not found. Still send a PUBCOMP anyway because this could be
 		 * due to a repeated PUBREL after a client has reconnected. */
+		log__printf(mosq, MOSQ_LOG_WARNING, "Warning: Received PUBREL from %s for an unknown packet identifier %d.", mosq->id, mid);
 	}
 #else
 	log__printf(mosq, MOSQ_LOG_DEBUG, "Client %s received PUBREL (Mid: %d)", mosq->id, mid);

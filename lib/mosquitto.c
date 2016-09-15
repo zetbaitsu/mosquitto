@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2010-2015 Roger Light <roger@atchoo.org>
+Copyright (c) 2010-2016 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -171,7 +171,7 @@ int mosquitto_reinitialise(struct mosquitto *mosq, const char *id, bool clean_se
 	mosq->out_packet = NULL;
 	mosq->current_out_packet = NULL;
 	mosq->last_msg_in = mosquitto_time();
-	mosq->last_msg_out = mosquitto_time();
+	mosq->next_msg_out = mosquitto_time() + mosq->keepalive;
 	mosq->ping_t = 0;
 	mosq->last_mid = 0;
 	mosq->state = mosq_cs_new;
@@ -194,7 +194,7 @@ int mosquitto_reinitialise(struct mosquitto *mosq, const char *id, bool clean_se
 	mosq->reconnect_delay = 1;
 	mosq->reconnect_delay_max = 1;
 	mosq->reconnect_exponential_backoff = false;
-	mosq->threaded = false;
+	mosq->threaded = mosq_ts_none;
 #ifdef WITH_TLS
 	mosq->ssl = NULL;
 	mosq->tls_cert_reqs = SSL_VERIFY_PEER;
@@ -272,10 +272,10 @@ void mosquitto__destroy(struct mosquitto *mosq)
 	if(!mosq) return;
 
 #ifdef WITH_THREADING
-	if(mosq->threaded && !pthread_equal(mosq->thread_id, pthread_self())){
+	if(mosq->threaded == mosq_ts_self && !pthread_equal(mosq->thread_id, pthread_self())){
 		pthread_cancel(mosq->thread_id);
 		pthread_join(mosq->thread_id, NULL);
-		mosq->threaded = false;
+		mosq->threaded = mosq_ts_none;
 	}
 
 	if(mosq->id){
@@ -476,7 +476,7 @@ static int mosquitto__reconnect(struct mosquitto *mosq, bool blocking)
 
 	pthread_mutex_lock(&mosq->msgtime_mutex);
 	mosq->last_msg_in = mosquitto_time();
-	mosq->last_msg_out = mosquitto_time();
+	mosq->next_msg_out = mosq->last_msg_in + mosq->keepalive;
 	pthread_mutex_unlock(&mosq->msgtime_mutex);
 
 	mosq->ping_t = 0;
@@ -549,6 +549,7 @@ int mosquitto_publish(struct mosquitto *mosq, int *mid, const char *topic, int p
 
 	if(!mosq || !topic || qos<0 || qos>2) return MOSQ_ERR_INVAL;
 	if(STREMPTY(topic)) return MOSQ_ERR_INVAL;
+	if(mosquitto_validate_utf8(topic, strlen(topic))) return MOSQ_ERR_MALFORMED_UTF8;
 	if(payloadlen < 0 || payloadlen > MQTT_MAX_PAYLOAD) return MOSQ_ERR_PAYLOAD_SIZE;
 
 	if(mosquitto_pub_topic_check(topic) != MOSQ_ERR_SUCCESS){
@@ -614,6 +615,7 @@ int mosquitto_subscribe(struct mosquitto *mosq, int *mid, const char *sub, int q
 	if(mosq->sock == INVALID_SOCKET) return MOSQ_ERR_NO_CONN;
 
 	if(mosquitto_sub_topic_check(sub)) return MOSQ_ERR_INVAL;
+	if(mosquitto_validate_utf8(sub, strlen(sub))) return MOSQ_ERR_MALFORMED_UTF8;
 
 	return send__subscribe(mosq, mid, sub, qos);
 }
@@ -624,6 +626,7 @@ int mosquitto_unsubscribe(struct mosquitto *mosq, int *mid, const char *sub)
 	if(mosq->sock == INVALID_SOCKET) return MOSQ_ERR_NO_CONN;
 
 	if(mosquitto_sub_topic_check(sub)) return MOSQ_ERR_INVAL;
+	if(mosquitto_validate_utf8(sub, strlen(sub))) return MOSQ_ERR_MALFORMED_UTF8;
 
 	return send__unsubscribe(mosq, mid, sub);
 }
@@ -817,6 +820,7 @@ int mosquitto_loop(struct mosquitto *mosq, int timeout, int max_packets)
 	int rc;
 	char pairbuf;
 	int maxfd = 0;
+	time_t now;
 
 	if(!mosq || max_packets < 1) return MOSQ_ERR_INVAL;
 #ifndef WIN32
@@ -839,7 +843,6 @@ int mosquitto_loop(struct mosquitto *mosq, int timeout, int max_packets)
 		if(mosq->ssl){
 			if(mosq->want_write){
 				FD_SET(mosq->sock, &writefds);
-				mosq->want_write = false;
 			}else if(mosq->want_connect){
 				/* Remove possible FD_SET from above, we don't want to check
 				 * for writing if we are still connecting, unless want_write is
@@ -879,21 +882,21 @@ int mosquitto_loop(struct mosquitto *mosq, int timeout, int max_packets)
 		}
 	}
 
-	if(timeout >= 0){
-		local_timeout.tv_sec = timeout/1000;
-#ifdef HAVE_PSELECT
-		local_timeout.tv_nsec = (timeout-local_timeout.tv_sec*1000)*1e6;
-#else
-		local_timeout.tv_usec = (timeout-local_timeout.tv_sec*1000)*1000;
-#endif
-	}else{
-		local_timeout.tv_sec = 1;
-#ifdef HAVE_PSELECT
-		local_timeout.tv_nsec = 0;
-#else
-		local_timeout.tv_usec = 0;
-#endif
+	if(timeout < 0){
+		timeout = 1000;
 	}
+
+	now = mosquitto_time();
+	if(mosq->next_msg_out && now + timeout/1000 > mosq->next_msg_out){
+		timeout = (mosq->next_msg_out - now)*1000;
+	}
+
+	local_timeout.tv_sec = timeout/1000;
+#ifdef HAVE_PSELECT
+	local_timeout.tv_nsec = (timeout-local_timeout.tv_sec*1000)*1e6;
+#else
+	local_timeout.tv_usec = (timeout-local_timeout.tv_sec*1000)*1000;
+#endif
 
 #ifdef HAVE_PSELECT
 	fdcount = pselect(maxfd+1, &readfds, &writefds, NULL, &local_timeout, NULL);
@@ -1293,6 +1296,8 @@ const char *mosquitto_strerror(int mosq_errno)
 			return "Lookup error.";
 		case MOSQ_ERR_PROXY:
 			return "Proxy error.";
+		case MOSQ_ERR_MALFORMED_UTF8:
+			return "Malformed UTF-8";
 		default:
 			return "Unknown error.";
 	}

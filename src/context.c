@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2009-2015 Roger Light <roger@atchoo.org>
+Copyright (c) 2009-2016 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -19,7 +19,7 @@ Contributors:
 
 #include "config.h"
 
-#include "mosquitto_broker.h"
+#include "mosquitto_broker_internal.h"
 #include "memory_mosq.h"
 #include "packet_mosq.h"
 #include "time_mosq.h"
@@ -37,7 +37,7 @@ struct mosquitto *context__init(struct mosquitto_db *db, mosq_sock_t sock)
 	context->state = mosq_cs_new;
 	context->sock = sock;
 	context->last_msg_in = mosquitto_time();
-	context->last_msg_out = mosquitto_time();
+	context->next_msg_out = mosquitto_time() + 60;
 	context->keepalive = 60; /* Default to 60s */
 	context->clean_session = true;
 	context->disconnect_t = 0;
@@ -70,8 +70,12 @@ struct mosquitto *context__init(struct mosquitto_db *db, mosq_sock_t sock)
 		}
 	}
 	context->bridge = NULL;
-	context->msgs = NULL;
-	context->last_msg = NULL;
+	context->inflight_msgs = NULL;
+	context->last_inflight_msg = NULL;
+	context->queued_msgs = NULL;
+	context->last_queued_msg = NULL;
+	context->msg_bytes = 0;
+	context->msg_bytes12 = 0;
 	context->msg_count = 0;
 	context->msg_count12 = 0;
 #ifdef WITH_TLS
@@ -166,15 +170,24 @@ void context__cleanup(struct mosquitto_db *db, struct mosquitto *context, bool d
 		context->will = NULL;
 	}
 	if(do_free || context->clean_session){
-		msg = context->msgs;
+		msg = context->inflight_msgs;
 		while(msg){
 			next = msg->next;
 			db__msg_store_deref(db, &msg->store);
 			mosquitto__free(msg);
 			msg = next;
 		}
-		context->msgs = NULL;
-		context->last_msg = NULL;
+		context->inflight_msgs = NULL;
+		context->last_inflight_msg = NULL;
+		msg = context->queued_msgs;
+		while(msg){
+			next = msg->next;
+			db__msg_store_deref(db, &msg->store);
+			mosquitto__free(msg);
+			msg = next;
+		}
+		context->queued_msgs = NULL;
+		context->last_queued_msg = NULL;
 	}
 	if(do_free){
 		mosquitto__free(context);

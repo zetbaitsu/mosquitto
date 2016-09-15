@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2014 Roger Light <roger@atchoo.org>
+Copyright (c) 2014-2016 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -82,8 +82,8 @@ struct mosq_config {
 	int unsub_topic_count; /* sub */
 	bool verbose; /* sub */
 	bool eol; /* sub */
-	bool hex_output; /* sub */
 	int msg_count; /* sub */
+	char *format; /* sub */
 #ifdef WITH_SOCKS
 	char *socks5_host;
 	int socks5_port;

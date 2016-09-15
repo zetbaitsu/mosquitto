@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2014 Roger Light <roger@atchoo.org>
+Copyright (c) 2014-2016 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -34,10 +34,91 @@ Contributors:
 static int mosquitto__parse_socks_url(struct mosq_config *cfg, char *url);
 static int client_config_line_proc(struct mosq_config *cfg, int pub_or_sub, int argc, char *argv[]);
 
+
+static int check_format(struct mosq_config *cfg, const char *str)
+{
+	int i;
+	int len;
+
+	len = strlen(str);
+	for(i=0; i<len; i++){
+		if(str[i] == '%'){
+			if(i == len-1){
+				// error
+				fprintf(stderr, "Error: Incomplete format specifier.\n");
+				return 1;
+			}else{
+				if(str[i+1] == '%'){
+					// Print %, ignore
+				}else if(str[i+1] == 'I'){
+					// ISO 8601 date+time
+				}else if(str[i+1] == 'l'){
+					// payload length
+				}else if(str[i+1] == 'm'){
+					// mid
+				}else if(str[i+1] == 'p'){
+					// payload
+				}else if(str[i+1] == 'q'){
+					// qos
+				}else if(str[i+1] == 'r'){
+					// retain
+				}else if(str[i+1] == 't'){
+					// topic
+				}else if(str[i+1] == 'j'){
+					// JSON output, escaped payload
+				}else if(str[i+1] == 'J'){
+					// JSON output, assuming JSON payload
+				}else if(str[i+1] == 'U'){
+					// Unix time+nanoseconds
+				}else if(str[i+1] == 'x'){
+					// payload in hex
+				}else{
+					fprintf(stderr, "Error: Invalid format specifier '%c'.\n", str[i+1]);
+					return 1;
+				}
+				i++;
+			}
+		}else if(str[i] == '@'){
+			if(i == len-1){
+				// error
+				fprintf(stderr, "Error: Incomplete format specifier.\n");
+				return 1;
+			}
+			i++;
+		}else if(str[i] == '\\'){
+			if(i == len-1){
+				// error
+				fprintf(stderr, "Error: Incomplete escape specifier.\n");
+				return 1;
+			}else{
+				switch(str[i+1]){
+					case '\\': // '\'
+					case '0':  // 0 (NULL)
+					case 'a':  // alert
+					case 'e':  // escape
+					case 'n':  // new line
+					case 'r':  // carriage return
+					case 't':  // horizontal tab
+					case 'v':  // vertical tab
+						break;
+
+					default:
+						fprintf(stderr, "Error: Invalid escape specifier '%c'.\n", str[i+1]);
+						return 1;
+				}
+				i++;
+			}
+		}
+	}
+
+	return 0;
+}
+
+
 void init_config(struct mosq_config *cfg)
 {
 	memset(cfg, 0, sizeof(*cfg));
-	cfg->port = 1883;
+	cfg->port = -1;
 	cfg->max_inflight = 20;
 	cfg->keepalive = 60;
 	cfg->clean_session = true;
@@ -59,6 +140,7 @@ void client_config_cleanup(struct mosq_config *cfg)
 	free(cfg->password);
 	free(cfg->will_topic);
 	free(cfg->will_payload);
+	free(cfg->format);
 #ifdef WITH_TLS
 	free(cfg->cafile);
 	free(cfg->capath);
@@ -121,6 +203,10 @@ int client_config_load(struct mosq_config *cfg, int pub_or_sub, int argc, char *
 	if(env){
 		len = strlen(env) + strlen("/mosquitto_pub") + 1;
 		loc = malloc(len);
+		if(!loc){
+			fprintf(stderr, "Error: Out of memory.\n");
+			return 1;
+		}
 		if(pub_or_sub == CLIENT_PUB){
 			snprintf(loc, len, "%s/mosquitto_pub", env);
 		}else{
@@ -132,6 +218,10 @@ int client_config_load(struct mosq_config *cfg, int pub_or_sub, int argc, char *
 		if(env){
 			len = strlen(env) + strlen("/.config/mosquitto_pub") + 1;
 			loc = malloc(len);
+			if(!loc){
+				fprintf(stderr, "Error: Out of memory.\n");
+				return 1;
+			}
 			if(pub_or_sub == CLIENT_PUB){
 				snprintf(loc, len, "%s/.config/mosquitto_pub", env);
 			}else{
@@ -148,6 +238,10 @@ int client_config_load(struct mosq_config *cfg, int pub_or_sub, int argc, char *
 	if(rc > 0 && rc < 1024){
 		len = strlen(env) + strlen("\\mosquitto_pub.conf") + 1;
 		loc = malloc(len);
+		if(!loc){
+			fprintf(stderr, "Error: Out of memory.\n");
+			return 1;
+		}
 		if(pub_or_sub == CLIENT_PUB){
 			snprintf(loc, len, "%s\\mosquitto_pub.conf", env);
 		}else{
@@ -240,8 +334,12 @@ int client_config_load(struct mosq_config *cfg, int pub_or_sub, int argc, char *
 	return MOSQ_ERR_SUCCESS;
 }
 
-int cfg_add_topic(struct mosq_config *cfg, int pub_or_sub, char *topic)
+int cfg_add_topic(struct mosq_config *cfg, int pub_or_sub, char *topic, const char *arg)
 {
+	if(mosquitto_validate_utf8(topic, strlen(topic))){
+		fprintf(stderr, "Error: Malformed UTF-8 in %s argument.\n\n", arg);
+		return 1;
+	}
 	if(pub_or_sub == CLIENT_PUB){
 		if(mosquitto_pub_topic_check(topic) == MOSQ_ERR_INVAL){
 			fprintf(stderr, "Error: Invalid publish topic '%s', does it contain '+' or '#'?\n", topic);
@@ -355,6 +453,28 @@ int client_config_line_proc(struct mosq_config *cfg, int pub_or_sub, int argc, c
 			}else{
 				cfg->pub_mode = MSGMODE_FILE;
 				cfg->file_input = strdup(argv[i+1]);
+				if(!cfg->file_input){
+					fprintf(stderr, "Error: Out of memory.\n");
+					return 1;
+				}
+			}
+			i++;
+		}else if(!strcmp(argv[i], "-F")){
+			if(pub_or_sub == CLIENT_PUB){
+				goto unknown_option;
+			}
+			if(i==argc-1){
+				fprintf(stderr, "Error: -F argument given but no format specified.\n\n");
+				return 1;
+			}else{
+				cfg->format = strdup(argv[i+1]);
+				if(!cfg->format){
+					fprintf(stderr, "Error: Out of memory.\n");
+					return 1;
+				}
+				if(check_format(cfg, cfg->format)){
+					return 1;
+				}
 			}
 			i++;
 		}else if(!strcmp(argv[i], "--help")){
@@ -428,6 +548,7 @@ int client_config_line_proc(struct mosq_config *cfg, int pub_or_sub, int argc, c
 
 				if(!strncasecmp(url, "mqtt://", 7)) {
 					url += 7;
+					cfg->port = 1883;
 				} else if(!strncasecmp(url, "mqtts://", 8)) {
 					url += 8;
 					cfg->port = 8883;
@@ -438,7 +559,7 @@ int client_config_line_proc(struct mosq_config *cfg, int pub_or_sub, int argc, c
 				topic = strchr(url, '/');
 				*topic++ = 0;
 
-				if(cfg_add_topic(cfg, pub_or_sub, topic))
+				if(cfg_add_topic(cfg, pub_or_sub, topic, "-L topic"))
 					return 1;
 
 				tmp = strchr(url, '@');
@@ -593,7 +714,7 @@ int client_config_line_proc(struct mosq_config *cfg, int pub_or_sub, int argc, c
 				fprintf(stderr, "Error: -t argument given but no topic specified.\n\n");
 				return 1;
 			}else{
-				if(cfg_add_topic(cfg, pub_or_sub, argv[i + 1]))
+				if(cfg_add_topic(cfg, pub_or_sub, argv[i + 1], "-t"))
 					return 1;
 				i++;
 			}
@@ -605,6 +726,10 @@ int client_config_line_proc(struct mosq_config *cfg, int pub_or_sub, int argc, c
 				fprintf(stderr, "Error: -T argument given but no topic filter specified.\n\n");
 				return 1;
 			}else{
+				if(mosquitto_validate_utf8(argv[i+1], strlen(argv[i+1]))){
+					fprintf(stderr, "Error: Malformed UTF-8 in -T argument.\n\n");
+					return 1;
+				}
 				if(mosquitto_sub_topic_check(argv[i+1]) == MOSQ_ERR_INVAL){
 					fprintf(stderr, "Error: Invalid filter topic '%s', are all '+' and '#' wildcards correct?\n", argv[i+1]);
 					return 1;
@@ -626,6 +751,10 @@ int client_config_line_proc(struct mosq_config *cfg, int pub_or_sub, int argc, c
 				fprintf(stderr, "Error: -U argument given but no unsubscribe topic specified.\n\n");
 				return 1;
 			}else{
+				if(mosquitto_validate_utf8(argv[i+1], strlen(argv[i+1]))){
+					fprintf(stderr, "Error: Malformed UTF-8 in -U argument.\n\n");
+					return 1;
+				}
 				if(mosquitto_sub_topic_check(argv[i+1]) == MOSQ_ERR_INVAL){
 					fprintf(stderr, "Error: Invalid unsubscribe topic '%s', are all '+' and '#' wildcards correct?\n", argv[i+1]);
 					return 1;
@@ -693,6 +822,10 @@ int client_config_line_proc(struct mosq_config *cfg, int pub_or_sub, int argc, c
 				fprintf(stderr, "Error: --will-topic argument given but no will topic specified.\n\n");
 				return 1;
 			}else{
+				if(mosquitto_validate_utf8(argv[i+1], strlen(argv[i+1]))){
+					fprintf(stderr, "Error: Malformed UTF-8 in --will-topic argument.\n\n");
+					return 1;
+				}
 				if(mosquitto_pub_topic_check(argv[i+1]) == MOSQ_ERR_INVAL){
 					fprintf(stderr, "Error: Invalid will topic '%s', does it contain '+' or '#'?\n", argv[i+1]);
 					return 1;
@@ -720,11 +853,6 @@ int client_config_line_proc(struct mosq_config *cfg, int pub_or_sub, int argc, c
 				goto unknown_option;
 			}
 			cfg->verbose = 1;
-		}else if(!strcmp(argv[i], "-x")){
-			if(pub_or_sub == CLIENT_PUB){
-				goto unknown_option;
-			}
-			cfg->hex_output = true;
 		}else{
 			goto unknown_option;
 		}
@@ -831,15 +959,32 @@ int client_connect(struct mosquitto *mosq, struct mosq_config *cfg)
 {
 	char err[1024];
 	int rc;
+	int port;
+
+#ifdef WITH_TLS
+	if(cfg->port < 0){
+		if(cfg->cafile || cfg->capath
+#ifdef WITH_TLS_PSK
+				|| cfg->psk
+#endif
+				){
+			port = 8883;
+		}else{
+			port = 1883;
+		}
+	}else{
+		port = cfg->port;
+	}
+#endif
 
 #ifdef WITH_SRV
 	if(cfg->use_srv){
 		rc = mosquitto_connect_srv(mosq, cfg->host, cfg->keepalive, cfg->bind_address);
 	}else{
-		rc = mosquitto_connect_bind(mosq, cfg->host, cfg->port, cfg->keepalive, cfg->bind_address);
+		rc = mosquitto_connect_bind(mosq, cfg->host, port, cfg->keepalive, cfg->bind_address);
 	}
 #else
-	rc = mosquitto_connect_bind(mosq, cfg->host, cfg->port, cfg->keepalive, cfg->bind_address);
+	rc = mosquitto_connect_bind(mosq, cfg->host, port, cfg->keepalive, cfg->bind_address);
 #endif
 	if(rc>0){
 		if(!cfg->quiet){

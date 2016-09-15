@@ -80,6 +80,12 @@ WITH_DOCS:=yes
 # Build with client support for SOCK5 proxy.
 WITH_SOCKS:=yes
 
+# Strip executables and shared libraries on install.
+WITH_STRIP:=no
+
+# Build static libraries
+WITH_STATIC_LIBRARIES:=no
+
 # =============================================================================
 # End of user configuration
 # =============================================================================
@@ -88,7 +94,6 @@ WITH_SOCKS:=yes
 # Also bump lib/mosquitto.h, CMakeLists.txt,
 # installer/mosquitto.nsi, installer/mosquitto64.nsi
 VERSION=1.4.90
-TIMESTAMP:=$(shell date "+%F %T%z")
 
 # Client library SO version. Bump if incompatible API/ABI changes are made.
 SOVERSION=1
@@ -97,6 +102,7 @@ SOVERSION=1
 XSLTPROC=xsltproc
 # For html generation
 DB_HTML_XSL=man/html.xsl
+TIMESTAMP:=$(shell date "+%F %T%z")
 
 #MANCOUNTRIES=en_GB
 
@@ -119,7 +125,7 @@ LIB_LDFLAGS:=${LDFLAGS}
 BROKER_CFLAGS:=${LIB_CFLAGS} ${CPPFLAGS} -DVERSION="\"${VERSION}\"" -DTIMESTAMP="\"${TIMESTAMP}\"" -DWITH_BROKER
 CLIENT_CFLAGS:=${CFLAGS} ${CPPFLAGS} -I../lib -DVERSION="\"${VERSION}\""
 
-ifneq ($(or $(find $(UNAME),FreeBSD), $(find $(UNAME),OpenBSD)),)
+ifneq ($(or $(findstring $(UNAME),FreeBSD), $(findstring $(UNAME),OpenBSD)),)
 	BROKER_LIBS:=-lm
 else
 	BROKER_LIBS:=-ldl -lm
@@ -254,3 +260,7 @@ prefix=/usr/local
 mandir=${prefix}/share/man
 localedir=${prefix}/share/locale
 STRIP?=strip
+
+ifeq ($(WITH_STRIP),yes)
+	STRIP_OPTS:=-s --strip-program=${CROSS_COMPILE}${STRIP}
+endif

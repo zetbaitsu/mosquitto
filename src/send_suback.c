@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2009-2015 Roger Light <roger@atchoo.org>
+Copyright (c) 2009-2016 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -16,7 +16,7 @@ Contributors:
 
 #include "config.h"
 
-#include "mosquitto_broker.h"
+#include "mosquitto_broker_internal.h"
 #include "mqtt3_protocol.h"
 #include "memory_mosq.h"
 #include "packet_mosq.h"

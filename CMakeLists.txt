@@ -32,23 +32,25 @@ if (WIN32)
 	set (DATAROOTDIR share)
 	set (MANDIR man)
 	set (SHAREDEST .)
+	set (PKGCONFIGDIR "${LIBDIR}/pkgconfig")
 	add_definitions("-D_CRT_SECURE_NO_WARNINGS")
 	add_definitions("-D_CRT_NONSTDC_NO_DEPRECATE")
 else (WIN32)
 	set (BINDIR bin)
 	set (SBINDIR sbin)
-	if (${CMAKE_INSTALL_PREFIX} STREQUAL /usr)
+	if ("${CMAKE_INSTALL_PREFIX}" STREQUAL /usr)
 		set (SYSCONFDIR /etc/mosquitto)
-	else (${CMAKE_INSTALL_PREFIX} STREQUAL /usr)
+	else ("${CMAKE_INSTALL_PREFIX}" STREQUAL /usr)
 		set (SYSCONFDIR etc/mosquitto)
-	endif (${CMAKE_INSTALL_PREFIX} STREQUAL /usr)
+	endif ("${CMAKE_INSTALL_PREFIX}" STREQUAL /usr)
 	
 	set (LIBDIR lib${LIB_SUFFIX})
 	set (CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${LIBDIR}")
 	set (INCLUDEDIR include)
 	set (DATAROOTDIR share)
-	set (MANDIR ${DATAROOTDIR}/man)
-	set (SHAREDIR ${DATAROOTDIR}/mosquitto)
+	set (MANDIR "${DATAROOTDIR}/man")
+	set (SHAREDIR "${DATAROOTDIR}/mosquitto")
+	set (PKGCONFIGDIR "${LIBDIR}/pkgconfig")
 endif (WIN32)
 
 option(WITH_TLS
@@ -79,6 +81,8 @@ endif (${WITH_SOCKS} STREQUAL ON)
 
 option(WITH_SRV "Include SRV lookup support?" OFF)
 
+option(DOCUMENTATION "Build documentation?" ON)
+
 # ========================================
 # Include projects
 # ========================================
@@ -86,15 +90,27 @@ option(WITH_SRV "Include SRV lookup support?" OFF)
 add_subdirectory(lib)
 add_subdirectory(client)
 add_subdirectory(src)
-add_subdirectory(man)
+if (${DOCUMENTATION} STREQUAL ON)
+	add_subdirectory(man)
+endif (${DOCUMENTATION} STREQUAL ON)
 
 # ========================================
 # Install config file
 # ========================================
 
-install(FILES mosquitto.conf aclfile.example pskfile.example pwfile.example DESTINATION ${SYSCONFDIR})
+install(FILES mosquitto.conf aclfile.example pskfile.example pwfile.example DESTINATION "${SYSCONFDIR}")
+
+
+# ========================================
+# Install pkg-config files
+# ========================================
+
+configure_file(libmosquitto.pc.in libmosquitto.pc @ONLY)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/libmosquitto.pc" DESTINATION "${PKGCONFIGDIR}")
+configure_file(libmosquittopp.pc.in libmosquittopp.pc @ONLY)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/libmosquittopp.pc" DESTINATION "${PKGCONFIGDIR}")
 
 # ========================================
 # Testing
 # ========================================
-add_custom_target(Tests COMMAND make -C test test)
+add_custom_target(Tests COMMAND make -C ${mosquitto_SOURCE_DIR}/test test)

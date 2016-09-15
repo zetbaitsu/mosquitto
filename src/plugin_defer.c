@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015 Roger Light <roger@atchoo.org>
+Copyright (c) 2015-2016 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -16,6 +16,9 @@ Contributors:
 
 /* This is a skeleton authentication and access control plugin that simply defers all checks. */
 
+#include <stdio.h>
+
+#include "mosquitto_broker.h"
 #include "mosquitto_plugin.h"
 #include "mosquitto.h"
 
@@ -24,37 +27,38 @@ int mosquitto_auth_plugin_version(void)
 	return MOSQ_AUTH_PLUGIN_VERSION;
 }
 
-int mosquitto_auth_plugin_init(void **user_data, struct mosquitto_auth_opt *auth_opts, int auth_opt_count)
+int mosquitto_auth_plugin_init(void **user_data, struct mosquitto_opt *auth_opts, int auth_opt_count)
 {
 	return MOSQ_ERR_SUCCESS;
 }
 
-int mosquitto_auth_plugin_cleanup(void *user_data, struct mosquitto_auth_opt *auth_opts, int auth_opt_count)
+int mosquitto_auth_plugin_cleanup(void *user_data, struct mosquitto_opt *auth_opts, int auth_opt_count)
 {
 	return MOSQ_ERR_SUCCESS;
 }
 
-int mosquitto_auth_security_init(void *user_data, struct mosquitto_auth_opt *auth_opts, int auth_opt_count, bool reload)
+int mosquitto_auth_security_init(void *user_data, struct mosquitto_opt *auth_opts, int auth_opt_count, bool reload)
 {
 	return MOSQ_ERR_SUCCESS;
 }
 
-int mosquitto_auth_security_cleanup(void *user_data, struct mosquitto_auth_opt *auth_opts, int auth_opt_count, bool reload)
+int mosquitto_auth_security_cleanup(void *user_data, struct mosquitto_opt *auth_opts, int auth_opt_count, bool reload)
 {
 	return MOSQ_ERR_SUCCESS;
 }
 
-int mosquitto_auth_acl_check(void *user_data, const char *clientid, const char *username, const char *topic, int access)
+int mosquitto_auth_acl_check(void *user_data, int access, const struct mosquitto *client, struct mosquitto_acl_msg *msg)
+{
+	printf("mosquitto_acl_check(u:%s)\n", mosquitto_client_username(client));
+	return MOSQ_ERR_PLUGIN_DEFER;
+}
+
+int mosquitto_auth_unpwd_check(void *user_data, const struct mosquitto *client, const char *username, const char *password)
 {
 	return MOSQ_ERR_PLUGIN_DEFER;
 }
 
-int mosquitto_auth_unpwd_check(void *user_data, const char *username, const char *password)
-{
-	return MOSQ_ERR_PLUGIN_DEFER;
-}
-
-int mosquitto_auth_psk_key_get(void *user_data, const char *hint, const char *identity, char *key, int max_key_len)
+int mosquitto_auth_psk_key_get(void *user_data, const struct mosquitto *client, const char *hint, const char *identity, char *key, int max_key_len)
 {
 	return MOSQ_ERR_PLUGIN_DEFER;
 }

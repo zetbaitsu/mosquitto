@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2009-2015 Roger Light <roger@atchoo.org>
+Copyright (c) 2009-2016 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -19,7 +19,7 @@ Contributors:
 
 #include "config.h"
 
-#include "mosquitto_broker.h"
+#include "mosquitto_broker_internal.h"
 #include "mqtt3_protocol.h"
 #include "memory_mosq.h"
 #include "packet_mosq.h"
@@ -72,6 +72,39 @@ static char *client_id_gen(struct mosquitto_db *db)
 	return client_id;
 }
 
+/* Remove any queued messages that are no longer allowed through ACL,
+ * assuming a possible change of username. */
+void connection_check_acl(struct mosquitto_db *db, struct mosquitto *context, struct mosquitto_client_msg **msgs)
+{
+	struct mosquitto_client_msg *msg_tail, *msg_prev;
+
+	msg_tail = *msgs;
+	msg_prev = NULL;
+	while(msg_tail){
+		if(msg_tail->direction == mosq_md_out){
+			if(mosquitto_acl_check(db, context, msg_tail->store->topic, MOSQ_ACL_READ) != MOSQ_ERR_SUCCESS){
+				db__msg_store_deref(db, &msg_tail->store);
+				if(msg_prev){
+					msg_prev->next = msg_tail->next;
+					mosquitto__free(msg_tail);
+					msg_tail = msg_prev->next;
+				}else{
+					*msgs = (*msgs)->next;
+					mosquitto__free(msg_tail);
+					msg_tail = (*msgs);
+				}
+				// XXX: why it does not update last_msg if msg_tail was the last message ?
+			}else{
+				msg_prev = msg_tail;
+				msg_tail = msg_tail->next;
+			}
+		}else{
+			msg_prev = msg_tail;
+			msg_tail = msg_tail->next;
+		}
+	}
+}
+
 int handle__connect(struct mosquitto_db *db, struct mosquitto *context)
 {
 	char *protocol_name = NULL;
@@ -80,6 +113,7 @@ int handle__connect(struct mosquitto_db *db, struct mosquitto *context)
 	uint8_t connect_ack = 0;
 	char *client_id = NULL;
 	char *will_payload = NULL, *will_topic = NULL;
+	char *will_topic_mount;
 	uint16_t will_payloadlen;
 	struct mosquitto_message *will_struct = NULL;
 	uint8_t will, will_retain, will_qos, clean_session;
@@ -87,7 +121,6 @@ int handle__connect(struct mosquitto_db *db, struct mosquitto *context)
 	char *username = NULL, *password = NULL;
 	int rc;
 	struct mosquitto__acl_user *acl_tail;
-	struct mosquitto_client_msg *msg_tail, *msg_prev;
 	struct mosquitto *found_context;
 	int slen;
 	struct mosquitto__subleaf *leaf;
@@ -128,7 +161,6 @@ int handle__connect(struct mosquitto_db *db, struct mosquitto *context)
 						protocol_version, context->address);
 			}
 			send__connack(context, 0, CONNACK_REFUSED_PROTOCOL_VERSION);
-			mosquitto__free(protocol_name);
 			rc = MOSQ_ERR_PROTOCOL;
 			goto handle_connect_error;
 		}
@@ -140,13 +172,11 @@ int handle__connect(struct mosquitto_db *db, struct mosquitto *context)
 						protocol_version, context->address);
 			}
 			send__connack(context, 0, CONNACK_REFUSED_PROTOCOL_VERSION);
-			mosquitto__free(protocol_name);
 			rc = MOSQ_ERR_PROTOCOL;
 			goto handle_connect_error;
 		}
 		if((context->in_packet.command&0x0F) != 0x00){
 			/* Reserved flags not set to 0, must disconnect. */
-			mosquitto__free(protocol_name);
 			rc = MOSQ_ERR_PROTOCOL;
 			goto handle_connect_error;
 		}
@@ -156,11 +186,11 @@ int handle__connect(struct mosquitto_db *db, struct mosquitto *context)
 			log__printf(NULL, MOSQ_LOG_INFO, "Invalid protocol \"%s\" in CONNECT from %s.",
 					protocol_name, context->address);
 		}
-		mosquitto__free(protocol_name);
 		rc = MOSQ_ERR_PROTOCOL;
 		goto handle_connect_error;
 	}
 	mosquitto__free(protocol_name);
+	protocol_name = NULL;
 
 	if(packet__read_byte(&context->in_packet, &connect_flags)){
 		rc = 1;
@@ -236,6 +266,21 @@ int handle__connect(struct mosquitto_db *db, struct mosquitto *context)
 			rc = 1;
 			goto handle_connect_error;
 		}
+
+		if(context->listener && context->listener->mount_point){
+			slen = strlen(context->listener->mount_point) + strlen(will_topic) + 1;
+			will_topic_mount = mosquitto__malloc(slen+1);
+			if(!will_topic_mount){
+				rc = MOSQ_ERR_NOMEM;
+				goto handle_connect_error;
+			}
+			snprintf(will_topic_mount, slen, "%s%s", context->listener->mount_point, will_topic);
+			will_topic_mount[slen] = '\0';
+
+			mosquitto__free(will_topic);
+			will_topic = will_topic_mount;
+		}
+
 		if(mosquitto_pub_topic_check(will_topic)){
 			rc = 1;
 			goto handle_connect_error;
@@ -375,7 +420,7 @@ int handle__connect(struct mosquitto_db *db, struct mosquitto *context)
 	}else{
 #endif /* WITH_TLS */
 		if(username_flag){
-			rc = mosquitto_unpwd_check(db, username, password);
+			rc = mosquitto_unpwd_check(db, context, username, password);
 			switch(rc){
 				case MOSQ_ERR_SUCCESS:
 					break;
@@ -445,15 +490,18 @@ int handle__connect(struct mosquitto_db *db, struct mosquitto *context)
 		context->clean_session = clean_session;
 
 		if(context->clean_session == false && found_context->clean_session == false){
-			if(found_context->msgs){
-				context->msgs = found_context->msgs;
-				found_context->msgs = NULL;
+			if(found_context->inflight_msgs || found_context->queued_msgs){
+				context->inflight_msgs = found_context->inflight_msgs;
+				context->queued_msgs = found_context->queued_msgs;
+				found_context->inflight_msgs = NULL;
+				found_context->queued_msgs = NULL;
 				db__message_reconnect_reset(db, context);
 			}
 			context->subs = found_context->subs;
 			found_context->subs = NULL;
 			context->sub_count = found_context->sub_count;
 			found_context->sub_count = 0;
+			context->last_mid = found_context->last_mid;
 
 			for(i=0; i<context->sub_count; i++){
 				if(context->subs[i]){
@@ -533,32 +581,8 @@ int handle__connect(struct mosquitto_db *db, struct mosquitto *context)
 		context->is_bridge = true;
 	}
 
-	/* Remove any queued messages that are no longer allowed through ACL,
-	 * assuming a possible change of username. */
-	msg_tail = context->msgs;
-	msg_prev = NULL;
-	while(msg_tail){
-		if(msg_tail->direction == mosq_md_out){
-			if(mosquitto_acl_check(db, context, msg_tail->store->topic, MOSQ_ACL_READ) != MOSQ_ERR_SUCCESS){
-				db__msg_store_deref(db, &msg_tail->store);
-				if(msg_prev){
-					msg_prev->next = msg_tail->next;
-					mosquitto__free(msg_tail);
-					msg_tail = msg_prev->next;
-				}else{
-					context->msgs = context->msgs->next;
-					mosquitto__free(msg_tail);
-					msg_tail = context->msgs;
-				}
-			}else{
-				msg_prev = msg_tail;
-				msg_tail = msg_tail->next;
-			}
-		}else{
-			msg_prev = msg_tail;
-			msg_tail = msg_tail->next;
-		}
-	}
+	connection_check_acl(db, context, &context->inflight_msgs);
+	connection_check_acl(db, context, &context->queued_msgs);
 
 	HASH_ADD_KEYPTR(hh_id, db->contexts_by_id, context->id, strlen(context->id), context);
 
@@ -577,6 +601,7 @@ handle_connect_error:
 	mosquitto__free(will_payload);
 	mosquitto__free(will_topic);
 	mosquitto__free(will_struct);
+	mosquitto__free(protocol_name);
 #ifdef WITH_TLS
 	if(client_cert) X509_free(client_cert);
 #endif

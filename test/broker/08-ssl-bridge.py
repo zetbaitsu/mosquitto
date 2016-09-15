@@ -1,10 +1,8 @@
 #!/usr/bin/env python
 
-import os
 import subprocess
 import socket
 import ssl
-import time
 
 import inspect, os, sys
 # From http://stackoverflow.com/questions/279237/python-import-a-module-from-a-folder
@@ -17,7 +15,7 @@ import mosq_test
 rc = 1
 keepalive = 60
 client_id = socket.gethostname()+".bridge_test"
-connect_packet = mosq_test.gen_connect(client_id, keepalive=keepalive, clean_session=False, proto_ver=128+3)
+connect_packet = mosq_test.gen_connect(client_id, keepalive=keepalive, clean_session=False, proto_ver=128+4)
 connack_packet = mosq_test.gen_connack(rc=0)
 
 mid = 1

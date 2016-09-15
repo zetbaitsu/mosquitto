@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2011-2015 Roger Light <roger@atchoo.org>
+Copyright (c) 2011-2016 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -19,7 +19,7 @@ Contributors:
 #include <stdio.h>
 #include <string.h>
 
-#include "mosquitto_broker.h"
+#include "mosquitto_broker_internal.h"
 #include "memory_mosq.h"
 #include "util_mosq.h"
 
@@ -131,6 +131,8 @@ int add__acl(struct mosquitto_db *db, const char *user, const char *topic, int a
 	acl = mosquitto__malloc(sizeof(struct mosquitto__acl));
 	if(!acl){
 		mosquitto__free(local_topic);
+		mosquitto__free(acl_user->username);
+		mosquitto__free(acl_user);
 		return MOSQ_ERR_NOMEM;
 	}
 	acl->access = access;
@@ -750,7 +752,7 @@ int mosquitto_psk_key_get_default(struct mosquitto_db *db, const char *hint, con
 	struct mosquitto__unpwd *u, *tmp;
 
 	if(!db || !hint || !identity || !key) return MOSQ_ERR_INVAL;
-	if(!db->psk_id) return MOSQ_ERR_AUTH;
+	if(!db->psk_id) return MOSQ_ERR_PLUGIN_DEFER;
 
 	HASH_ITER(hh, db->psk_id, u, tmp){
 		if(!strcmp(u->username, identity)){

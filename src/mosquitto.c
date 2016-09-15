@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2009-2015 Roger Light <roger@atchoo.org>
+Copyright (c) 2009-2016 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -21,6 +21,7 @@ Contributors:
 #  define _BSD_SOURCE
 #  include <unistd.h>
 #  include <grp.h>
+#  include <assert.h>
 #endif
 
 #ifndef WIN32
@@ -49,7 +50,7 @@ Contributors:
 #  include <libwebsockets.h>
 #endif
 
-#include "mosquitto_broker.h"
+#include "mosquitto_broker_internal.h"
 #include "memory_mosq.h"
 #include "util_mosq.h"
 
@@ -70,6 +71,9 @@ int deny_severity = LOG_INFO;
 void handle_sigint(int signal);
 void handle_sigusr1(int signal);
 void handle_sigusr2(int signal);
+#ifdef SIGHUP
+void handle_sighup(int signal);
+#endif
 
 struct mosquitto_db *mosquitto__get_db(void)
 {
@@ -156,33 +160,36 @@ int restore_privileges(void)
 	return MOSQ_ERR_SUCCESS;
 }
 
-#ifdef SIGHUP
-/* Signal handler for SIGHUP - flag a config reload. */
-void handle_sighup(int signal)
+
+void mosquitto__daemonise(void)
 {
-	flag_reload = true;
-}
+#ifndef WIN32
+	char err[256];
+	pid_t pid;
+
+	pid = fork();
+	if(pid < 0){
+		strerror_r(errno, err, 256);
+		log__printf(NULL, MOSQ_LOG_ERR, "Error in fork: %s", err);
+		exit(1);
+	}
+	if(pid > 0){
+		exit(0);
+	}
+	if(setsid() < 0){
+		strerror_r(errno, err, 256);
+		log__printf(NULL, MOSQ_LOG_ERR, "Error in setsid: %s", err);
+		exit(1);
+	}
+
+	assert(freopen("/dev/null", "r", stdin));
+	assert(freopen("/dev/null", "w", stdout));
+	assert(freopen("/dev/null", "w", stderr));
+#else
+	log__printf(NULL, MOSQ_LOG_WARNING, "Warning: Can't start in daemon mode in Windows.");
 #endif
-
-/* Signal handler for SIGINT and SIGTERM - just stop gracefully. */
-void handle_sigint(int signal)
-{
-	run = 0;
 }
 
-/* Signal handler for SIGUSR1 - backup the db. */
-void handle_sigusr1(int signal)
-{
-#ifdef WITH_PERSISTENCE
-	flag_db_backup = true;
-#endif
-}
-
-/* Signal handler for SIGUSR2 - vacuum the db. */
-void handle_sigusr2(int signal)
-{
-	flag_tree_print = true;
-}
 
 int main(int argc, char *argv[])
 {
@@ -190,9 +197,6 @@ int main(int argc, char *argv[])
 	int listensock_count = 0;
 	int listensock_index = 0;
 	struct mosquitto__config config;
-#ifdef WITH_SYS_TREE
-	char buf[1024];
-#endif
 	int i, j;
 	FILE *pid;
 	int listener_max;
@@ -200,7 +204,6 @@ int main(int argc, char *argv[])
 #ifdef WIN32
 	SYSTEMTIME st;
 #else
-	char err[256];
 	struct timeval tv;
 #endif
 	struct mosquitto *ctxt, *ctxt_tmp;
@@ -239,20 +242,7 @@ int main(int argc, char *argv[])
 	int_db.config = &config;
 
 	if(config.daemon){
-#ifndef WIN32
-		switch(fork()){
-			case 0:
-				break;
-			case -1:
-				strerror_r(errno, err, 256);
-			log__printf(NULL, MOSQ_LOG_ERR, "Error in fork: %s", err);
-				return 1;
-			default:
-				return MOSQ_ERR_SUCCESS;
-		}
-#else
-		log__printf(NULL, MOSQ_LOG_WARNING, "Warning: Can't start in daemon mode in Windows.");
-#endif
+		mosquitto__daemonise();
 	}
 
 	if(config.daemon && config.pid_file){
@@ -288,13 +278,7 @@ int main(int argc, char *argv[])
 	if(rc) return rc;
 
 #ifdef WITH_SYS_TREE
-	if(config.sys_interval > 0){
-		/* Set static $SYS messages */
-		snprintf(buf, 1024, "mosquitto version %s", VERSION);
-		db__messages_easy_queue(&int_db, NULL, "$SYS/broker/version", 2, strlen(buf), buf, 1);
-		snprintf(buf, 1024, "%s", TIMESTAMP);
-		db__messages_easy_queue(&int_db, NULL, "$SYS/broker/timestamp", 2, strlen(buf), buf, 1);
-	}
+	sys_tree__init(&int_db);
 #endif
 
 	listener_max = -1;
@@ -354,6 +338,9 @@ int main(int argc, char *argv[])
 	signal(SIGUSR1, handle_sigusr1);
 	signal(SIGUSR2, handle_sigusr2);
 	signal(SIGPIPE, SIG_IGN);
+#endif
+#ifdef WIN32
+	CreateThread(NULL, 0, SigThreadProc, NULL, 0, NULL);
 #endif
 
 #ifdef WITH_BRIDGE

@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2010-2015 Roger Light <roger@atchoo.org>
+Copyright (c) 2010-2016 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -112,6 +112,12 @@ enum mosquitto__protocol {
 	mosq_p_mqtts = 3
 };
 
+enum mosquitto__threaded_state {
+	mosq_ts_none,		/* No threads in use */
+	mosq_ts_self,		/* Threads started by libmosquitto */
+	mosq_ts_external	/* Threads started by external code */
+};
+
 enum mosquitto__transport {
 	mosq_t_invalid = 0,
 	mosq_t_tcp = 1,
@@ -155,7 +161,7 @@ struct mosquitto {
 	uint16_t last_mid;
 	enum mosquitto_client_state state;
 	time_t last_msg_in;
-	time_t last_msg_out;
+	time_t next_msg_out;
 	time_t ping_t;
 	struct mosquitto__packet in_packet;
 	struct mosquitto__packet *current_out_packet;
@@ -195,8 +201,12 @@ struct mosquitto {
 	bool is_dropping;
 	bool is_bridge;
 	struct mosquitto__bridge *bridge;
-	struct mosquitto_client_msg *msgs;
-	struct mosquitto_client_msg *last_msg;
+	struct mosquitto_client_msg *inflight_msgs;
+	struct mosquitto_client_msg *last_inflight_msg;
+	struct mosquitto_client_msg *queued_msgs;
+	struct mosquitto_client_msg *last_queued_msg;
+	unsigned long msg_bytes;
+	unsigned long msg_bytes12;
 	int msg_count;
 	int msg_count12;
 	struct mosquitto__acl_user *acl_list;
@@ -243,7 +253,7 @@ struct mosquitto {
 	unsigned int reconnect_delay;
 	unsigned int reconnect_delay_max;
 	bool reconnect_exponential_backoff;
-	bool threaded;
+	char threaded;
 	struct mosquitto__packet *out_packet_last;
 	int inflight_messages;
 	int max_inflight_messages;

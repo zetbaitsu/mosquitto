@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2010-2015 Roger Light <roger@atchoo.org>
+Copyright (c) 2010-2016 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -37,6 +37,7 @@ int will__set(struct mosquitto *mosq, const char *topic, int payloadlen, const v
 	if(payloadlen > 0 && !payload) return MOSQ_ERR_INVAL;
 
 	if(mosquitto_pub_topic_check(topic)) return MOSQ_ERR_INVAL;
+	if(mosquitto_validate_utf8(topic, strlen(topic))) return MOSQ_ERR_MALFORMED_UTF8;
 
 	if(mosq->will){
 		mosquitto__free(mosq->will->topic);

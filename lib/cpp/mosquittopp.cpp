@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2010-2014 Roger Light <roger@atchoo.org>
+Copyright (c) 2010-2016 Roger Light <roger@atchoo.org>
 
 All rights reserved. This program and the accompanying materials
 are made available under the terms of the Eclipse Public License v1.0
@@ -104,6 +104,11 @@ int sub_topic_tokens_free(char ***topics, int count)
 int topic_matches_sub(const char *sub, const char *topic, bool *result)
 {
 	return mosquitto_topic_matches_sub(sub, topic, result);
+}
+
+int validate_utf8(const char *str, int len)
+{
+	return mosquitto_validate_utf8(str, len);
 }
 
 int subscribe_simple(

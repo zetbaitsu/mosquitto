@@ -22,7 +22,7 @@ set (MOSQ_SRCS
 	loop.c
 	../lib/memory_mosq.c ../lib/memory_mosq.h
 	mosquitto.c
-	mosquitto_broker.h
+	mosquitto_broker.h mosquitto_broker_internal.h
 	net.c
 	../lib/net_mosq.c ../lib/net_mosq.h
 	../lib/packet_mosq.c ../lib/packet_mosq.h
@@ -37,12 +37,14 @@ set (MOSQ_SRCS
 	../lib/send_disconnect.c
 	../lib/send_publish.c
 	send_suback.c
+	signals.c
 	../lib/send_subscribe.c
 	../lib/send_unsubscribe.c
 	sys_tree.c sys_tree.h
 	../lib/time_mosq.c
 	../lib/tls_mosq.c
 	../lib/util_mosq.c ../lib/util_mosq.h
+	../lib/utf8_mosq.c
 	websockets.c
 	../lib/will_mosq.c ../lib/will_mosq.h)
 
@@ -145,16 +147,17 @@ if (UNIX)
 	endif (APPLE)
 endif (UNIX)
 
-install(TARGETS mosquitto RUNTIME DESTINATION ${SBINDIR} LIBRARY DESTINATION ${LIBDIR})
-install(FILES mosquitto_plugin.h DESTINATION ${INCLUDEDIR})
+install(TARGETS mosquitto RUNTIME DESTINATION "${SBINDIR}" LIBRARY DESTINATION "${LIBDIR}")
+install(FILES mosquitto_broker.h mosquitto_plugin.h DESTINATION "${INCLUDEDIR}")
 
 if (${WITH_TLS} STREQUAL ON)
 	add_executable(mosquitto_passwd mosquitto_passwd.c)
-	target_link_libraries(mosquitto_passwd ${OPENSSL_LIBRARIES})
-	install(TARGETS mosquitto_passwd RUNTIME DESTINATION ${BINDIR} LIBRARY DESTINATION ${LIBDIR})
+	target_link_libraries(mosquitto_passwd "${OPENSSL_LIBRARIES}")
+	install(TARGETS mosquitto_passwd RUNTIME DESTINATION "${BINDIR}" LIBRARY DESTINATION "${LIBDIR}")
 endif (${WITH_TLS} STREQUAL ON)
 
-if (UNIX)
+if (UNIX AND NOT APPLE)
 	install(CODE "EXEC_PROGRAM(/sbin/ldconfig)")
-endif (UNIX)
+endif (UNIX AND NOT APPLE)
+
 
