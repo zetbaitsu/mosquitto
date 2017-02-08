@@ -523,12 +523,47 @@ int mqtt3_db_messages_easy_queue(struct mosquitto_db *db, struct mosquitto *cont
 	return mqtt3_db_messages_queue(db, source_id, topic, qos, retain, &stored);
 }
 
+long long timestamp() {
+    struct timeval te;
+    gettimeofday(&te, NULL);
+    long long milliseconds = te.tv_sec * 1000LL + te.tv_usec / 1000;
+    return milliseconds;
+}
+
+char* create_status_payload(const char *status) {
+    char *time = (char *) malloc(sizeof(char) * 16);;
+    sprintf(time, "%lld", timestamp());
+    char *payload = (char *) malloc(sizeof(char) * 15);
+    payload[0] = status[0];
+    payload[1] = ':';
+    int i;
+    for(i=0;i<13;i++) {
+        payload[i+2] = time[i];
+    }
+    return payload;
+}
+
+int userStatusTopic(const char *topic) {
+	int len = strlen(topic);
+	if (len > 4) {
+		if(topic[0] == 'u' && topic[1] == '/' && topic[len-1] == 's' && topic[len-2] == '/') {
+			return 1;
+		}
+	}
+    return 0;
+}
+
 int mqtt3_db_message_store(struct mosquitto_db *db, const char *source, uint16_t source_mid, const char *topic, int qos, uint32_t payloadlen, const void *payload, int retain, struct mosquitto_msg_store **stored, dbid_t store_id)
 {
 	struct mosquitto_msg_store *temp;
 
 	assert(db);
 	assert(stored);
+
+	if (userStatusTopic(topic)) {
+        payload = create_status_payload(payload);
+        payloadlen = strlen(payload);
+    }
 
 	temp = _mosquitto_malloc(sizeof(struct mosquitto_msg_store));
 	if(!temp) return MOSQ_ERR_NOMEM;
