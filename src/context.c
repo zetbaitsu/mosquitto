@@ -17,10 +17,6 @@ Contributors:
 #include <assert.h>
 #include <time.h>
 
-#include <stdio.h>
-#include <stdint.h>
-#include <sys/time.h>
-
 #include <config.h>
 
 #include <mosquitto_broker.h>

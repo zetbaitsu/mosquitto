@@ -16,6 +16,8 @@ Contributors:
 
 #include <assert.h>
 #include <stdio.h>
+#include <sys/time.h>
+#include <string.h>
 
 #include <config.h>
 
