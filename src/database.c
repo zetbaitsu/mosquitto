@@ -536,7 +536,8 @@ char* create_status_payload(const char *status) {
     char *time = (char *) malloc(sizeof(char) * 16);;
     sprintf(time, "%lld", timestamp());
     char *payload = (char *) malloc(sizeof(char) * 15);
-    payload[0] = status[0];
+    if (status == NULL || strlen(status) <= 0) payload[0] = '0';
+    else payload[0] = status[0];
     payload[1] = ':';
     int i;
     for(i=0;i<13;i++) {
