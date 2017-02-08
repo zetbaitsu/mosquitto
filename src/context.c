@@ -17,6 +17,10 @@ Contributors:
 #include <assert.h>
 #include <time.h>
 
+#include <stdio.h>
+#include <stdint.h>
+#include <sys/time.h>
+
 #include <config.h>
 
 #include <mosquitto_broker.h>
@@ -185,12 +189,33 @@ void mqtt3_context_cleanup(struct mosquitto_db *db, struct mosquitto *context, b
 	}
 }
 
+long long current_timestamp() {
+    struct timeval te;
+    gettimeofday(&te, NULL);
+    long long milliseconds = te.tv_sec * 1000LL + te.tv_usec / 1000;
+    return milliseconds;
+}
+
+char* create_disconnect_payload() {
+    char *time = (char *) malloc(sizeof(char) * 16);;
+    sprintf(time, "%lld", current_timestamp());
+    char *payload = (char *) malloc(sizeof(char) * 15);
+    payload[0] = '0';
+    payload[1] = ':';
+    int i;
+    for(i=0;i<13;i++) {
+        payload[i+2] = time[i];
+    }
+    return payload;
+}
+
 void mqtt3_context_disconnect(struct mosquitto_db *db, struct mosquitto *ctxt)
 {
 	if(ctxt->state != mosq_cs_disconnecting && ctxt->will){
 		if(mosquitto_acl_check(db, ctxt, ctxt->will->topic, MOSQ_ACL_WRITE) == MOSQ_ERR_SUCCESS){
 			/* Unexpected disconnect, queue the client will. */
-			mqtt3_db_messages_easy_queue(db, ctxt, ctxt->will->topic, ctxt->will->qos, ctxt->will->payloadlen, ctxt->will->payload, ctxt->will->retain);
+			char* payload = create_disconnect_payload();
+			mqtt3_db_messages_easy_queue(db, ctxt, ctxt->will->topic, ctxt->will->qos, strlen(payload), payload, ctxt->will->retain);
 		}
 	}
 	if(ctxt->will){
