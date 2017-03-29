@@ -649,6 +649,13 @@ int mqtt3_handle_subscribe(struct mosquitto_db *db, struct mosquitto *context)
 				if(payload) _mosquitto_free(payload);
 				return 1;
 			}
+			if(strlen(sub) < 4){
+				_mosquitto_log_printf(NULL, MOSQ_LOG_INFO, "Topic subscription %s too short, disconnecting.",
+									  context->address);
+				_mosquitto_free(sub);
+				if(payload) _mosquitto_free(payload);
+				return 1;
+			}
 			if(mosquitto_sub_topic_check(sub)){
 				_mosquitto_log_printf(NULL, MOSQ_LOG_INFO, "Invalid subscription string from %s, disconnecting.",
 					context->address);
