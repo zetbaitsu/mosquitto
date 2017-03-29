@@ -1,3 +1,26 @@
+1.4.11 - 20170220
+=================
+
+Broker:
+- Fix crash when "lazy" type bridge attempts to reconnect. Closes #259.
+- maximum_connections now applies to websockets listeners. Closes #271.
+- Allow bridges to use TLS with IPv6.
+- Don't error on zero length persistence files. Closes #316.
+- For http only websockets clients, close files served over http in all cases
+  when the client disconnects. Closes #354.
+- Fix error message when websockets http_dir directory does not exist.
+- Improve password utility error message. Closes #379.
+
+Clients:
+- Use of --ciphers no longer requires you to also pass --tls-version.
+  Closes #380.
+
+Client library:
+- Clients can now use TLS with IPv6.
+- Fix potential socket leakage when reconnecting. Closes #304.
+- Fix potential negative timeout being passed to pselect. Closes #329.
+
+
 1.4.10 - 20160816
 =================
 
