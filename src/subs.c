@@ -102,10 +102,6 @@ static int _subs_process(struct mosquitto_db *db, struct _mosquitto_subhier *hie
 		}
 		/* Check for ACL topic access. */
 		rc2 = mosquitto_acl_check(db, leaf->context, topic, MOSQ_ACL_READ);
-		int len = strlen(topic);
-		if (len < 4) {
-			rc2 = MOSQ_ERR_ACL_DENIED;
-		}
 		if(rc2 == MOSQ_ERR_ACL_DENIED){
 			leaf = leaf->next;
 			continue;
