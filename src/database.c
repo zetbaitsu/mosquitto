@@ -546,7 +546,7 @@ char* create_status_payload(const char *status) {
     return payload;
 }
 
-int userStatusTopic(const char *topic) {
+int user_status_topic(const char *topic) {
 	int len = strlen(topic);
 	if (len > 4) {
 		if(topic[0] == 'u' && topic[1] == '/' && topic[len-1] == 's' && topic[len-2] == '/') {
@@ -563,7 +563,7 @@ int mqtt3_db_message_store(struct mosquitto_db *db, const char *source, uint16_t
 	assert(db);
 	assert(stored);
 
-	if (userStatusTopic(topic)) {
+	if (user_status_topic(topic)) {
         payload = create_status_payload(payload);
         payloadlen = strlen(payload);
     }

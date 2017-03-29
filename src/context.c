@@ -191,7 +191,6 @@ void mqtt3_context_disconnect(struct mosquitto_db *db, struct mosquitto *ctxt)
 		if(mosquitto_acl_check(db, ctxt, ctxt->will->topic, MOSQ_ACL_WRITE) == MOSQ_ERR_SUCCESS){
 			/* Unexpected disconnect, queue the client will. */
 			mqtt3_db_messages_easy_queue(db, ctxt, ctxt->will->topic, ctxt->will->qos, ctxt->will->payloadlen, ctxt->will->payload, ctxt->will->retain);
-
 		}
 	}
 	if(ctxt->will){
