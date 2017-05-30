@@ -71,6 +71,10 @@ static int _subs_process(struct mosquitto_db *db, struct _mosquitto_subhier *hie
 
 	leaf = hier->subs;
 
+    //Force retain to false
+    retain = 0;
+    set_retain = false;
+
 	if(retain && set_retain){
 #ifdef WITH_PERSISTENCE
 		if(strncmp(topic, "$SYS", 4)){
@@ -106,7 +110,11 @@ static int _subs_process(struct mosquitto_db *db, struct _mosquitto_subhier *hie
 			leaf = leaf->next;
 			continue;
 		}else if(rc2 == MOSQ_ERR_SUCCESS){
-			client_qos = leaf->qos;
+			//client_qos = leaf->qos;
+            //Force qos to 0
+            client_qos = 0;
+            qos = 0;
+            msg_qos = 0;
 
 			if(db->config->upgrade_outgoing_qos){
 				msg_qos = client_qos;
@@ -132,6 +140,8 @@ static int _subs_process(struct mosquitto_db *db, struct _mosquitto_subhier *hie
 				 * retain should be false. */
 				client_retain = false;
 			}
+            //Force client retain to false
+            client_retain = false;
 			if(mqtt3_db_message_insert(db, leaf->context, mid, mosq_md_out, msg_qos, client_retain, stored) == 1) rc = 1;
 		}else{
 			return 1; /* Application error */
