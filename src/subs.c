@@ -70,10 +70,7 @@ static int _subs_process(struct mosquitto_db *db, struct _mosquitto_subhier *hie
 	bool client_retain;
 
 	leaf = hier->subs;
-
-    //Force retain to false
-    retain = 0;
-    set_retain = false;
+	
 
 	if(retain && set_retain){
 #ifdef WITH_PERSISTENCE
@@ -140,8 +137,6 @@ static int _subs_process(struct mosquitto_db *db, struct _mosquitto_subhier *hie
 				 * retain should be false. */
 				client_retain = false;
 			}
-            //Force client retain to false
-            client_retain = false;
 			if(mqtt3_db_message_insert(db, leaf->context, mid, mosq_md_out, msg_qos, client_retain, stored) == 1) rc = 1;
 		}else{
 			return 1; /* Application error */
